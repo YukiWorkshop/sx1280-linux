@@ -140,7 +140,7 @@ typedef struct {
  */
 class Radio
 {
-protected:
+public:
 	/*!
 	 * \brief Callback on Tx done interrupt
 	 */
