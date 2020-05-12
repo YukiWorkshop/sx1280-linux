@@ -28,7 +28,7 @@
 using namespace YukiWorkshop;
 using namespace YukiWorkshop::Drivers::Semtech;
 
-int main() {
+int main(int argc, char **argv) {
 
 	GPIO::Device g(0);
 
@@ -39,6 +39,14 @@ int main() {
 
 	cbs.txTimeout = [&]() {
 		std::cout << "wow tx timeout!\n";
+	};
+
+	cbs.rxDone = [&]() {
+		std::cout << "wow rx done!\n";
+	};
+
+	cbs.rxTimeout = [&]() {
+		std::cout << "wow rx timeout!\n";
 	};
 
 //	Drivers::Semtech::SX1280_UART Radio("/dev/ttyUSB0", g, 19, 6, 13, 26, -1, -1, cbs);
@@ -117,10 +125,10 @@ int main() {
 	gg.CrcLength = RADIO_CRC_2_BYTES;
 	gg.Whitening = RADIO_WHITENING_OFF;
 
-	Radio.SetPacketType(PACKET_TYPE_LORA);
+	Radio.SetPacketType(PACKET_TYPE_FLRC);
 
-	Radio.SetModulationParams( &ModulationParams2 );
-	Radio.SetPacketParams( &PacketParams2 );
+	Radio.SetModulationParams( &ModulationParams );
+	Radio.SetPacketParams( &PacketParams );
 
 	// only used in GFSK, FLRC (4 bytes max) and BLE mode
 	uint8_t sw[] = { 0xDD, 0xA0, 0x96, 0x69, 0xDD };
@@ -132,33 +140,74 @@ int main() {
 
 	std::cout << Radio.GetFirmwareVersion() << "\n";
 
-	Radio.SetTxContinuousWave( );
-	puts("SetTxContinuousWave done");
+//	Radio.SetTxContinuousWave( );
+//	puts("SetTxContinuousWave done");
 //	sleep(100);
 
-	while (1) {
-		for (size_t i = 2470; i < 2501; i++) {
-			Radio.SetRfFrequency(i * 1000000UL);
-//			usleep(1000 * 50);
-		}
-	}
+//	while (1) {
+//		for (size_t i = 2470; i < 2501; i++) {
+//			Radio.SetRfFrequency(i * 1000000UL);
+////			usleep(1000 * 50);
+//		}
+//	}
 
-	auto IrqMask = IRQ_RX_DONE | IRQ_TX_DONE | IRQ_CRC_ERROR | IRQ_RX_TX_TIMEOUT;
+	auto IrqMask = IRQ_RX_DONE | IRQ_TX_DONE | IRQ_RX_TX_TIMEOUT;
 	Radio.SetDioIrqParams(IrqMask, IrqMask, IRQ_RADIO_NONE, IRQ_RADIO_NONE);
 
 	std::thread irqthread([&](){Radio.RunIrqHandler();});
-//	Radio.SetRfFrequency( 2470000000UL );
+	Radio.SetRfFrequency( 2488000000UL );
 //	sleep(2);
-	while (1) {
-		char buf[253];
-		Radio.SendPayload((uint8_t *)buf, 253, ( TickTime_t ){ RADIO_TICK_SIZE_1000_US, 10000 } );
-		puts("SendPayload done");
 
-//		usleep(3 * 1000);
-//		sleep(1);
+//	Radio.txDone = [&]() {
+//		std::cout << "wow tx done!\n";
+//		char buf[253] = "12345";
+//		Radio.SendPayload((uint8_t *) buf, 127, (TickTime_t) {RADIO_TICK_SIZE_1000_US, 10000});
+//		puts("SendPayload done");
+//	};
+//
+//	Radio.txTimeout = [&]() {
+//		std::cout << "wow tx timeout!\n";
+//		char buf[253] = "12345";
+//		Radio.SendPayload((uint8_t *) buf, 127, (TickTime_t) {RADIO_TICK_SIZE_1000_US, 10000});
+//		puts("SendPayload done");
+//	};
+
+	Radio.rxDone = [&]() {
+		char buf[127];
+		uint8_t sz;
+		std::cout << "wow rx done!\n";
+		Radio.GetPayload(reinterpret_cast<uint8_t *>(buf), &sz, 127);
+		printf("recvd %u bytes\n", sz);
+		write(STDOUT_FILENO, buf, 127);
+		Radio.SetRx((TickTime_t) {RADIO_TICK_SIZE_1000_US, 1000});
+		puts("SetRx done");
+	};
+
+	Radio.rxTimeout = [&]() {
+		std::cout << "wow rx timeout!\n";
+		Radio.SetRx((TickTime_t) {RADIO_TICK_SIZE_1000_US, 1000});
+		puts("SetRx done");
+	};
+
+
+	if (argc == 1) {
+		while (1) {
+			char buf[253] = "12345678\n";
+			Radio.SendPayload((uint8_t *) buf, 127, (TickTime_t) {RADIO_TICK_SIZE_1000_US, 1000});
+			puts("SendPayload done");
+			usleep(100 * 1000);
+		}
+
+	} else if (argc == 2 ) {
+		Radio.SetRx((TickTime_t) {RADIO_TICK_SIZE_1000_US, 1000});
+		puts("SetRx done");
+	} else {
+		Radio.SetTxContinuousWave( );
+		puts("SetTxContinuousWave done");
 	}
 
 	puts("setup done");
-	sleep(100);
+	while (1)
+		sleep(100);
 
 }
