@@ -1643,6 +1643,202 @@ namespace YukiWorkshop::Drivers::Semtech {
 		 * \param [in]  preambleLength  The desired preamble length
 		 */
 		void ForcePreambleLength(RadioPreambleLengths_t preambleLength);
+
+		static uint16_t GetTimeOnAir(const ModulationParams_t& modparams, const PacketParams_t& pktparams) {
+			uint16_t result = 2000;
+			double tPayload = 0.0;
+
+			if( modparams.PacketType == PACKET_TYPE_LORA )
+			{
+				uint16_t bw = 0.0;
+				double nPayload = 0.0;
+				double ts = 0.0;
+
+				uint8_t SF = modparams.Params.LoRa.SpreadingFactor >> 4;
+				uint8_t crc = ( pktparams.Params.LoRa.Crc == LORA_CRC_ON ) ? 16 : 0; // 16 bit if present else 0
+				uint8_t header = ( pktparams.Params.LoRa.HeaderType == LORA_PACKET_VARIABLE_LENGTH ) ? 20 : 0; // 20 if present else 0
+				uint16_t payload = 8 * pktparams.Params.LoRa.PayloadLength;
+				uint8_t CR = modparams.Params.LoRa.CodingRate;
+
+				switch( modparams.Params.LoRa.Bandwidth )
+				{
+					case LORA_BW_0200:
+						bw = 203;
+						break;
+
+					case LORA_BW_0400:
+						bw = 406;
+						break;
+
+					case LORA_BW_0800:
+						bw = 812;
+						break;
+
+					case LORA_BW_1600:
+						bw = 1625;
+						break;
+
+					default:
+						break;
+				}
+
+				if( SF < 7 )
+				{
+					nPayload = fmax( ( ( double )( payload + crc -(4 * SF) + header ) ), 0.0 );
+					nPayload = nPayload / ( double )( 4 * SF );
+					nPayload = ceil( nPayload );
+					nPayload = nPayload * ( CR + 4 );
+					nPayload = nPayload + pktparams.Params.LoRa.PreambleLength + 6.25 + 8;
+				}
+				else if( SF > 10 )
+				{
+					nPayload = fmax( ( ( double )( payload + crc -(4 * SF) + 8 + header ) ), 0.0 );
+					nPayload = nPayload / ( double )( 4 * ( SF - 2 ) );
+					nPayload = ceil( nPayload );
+					nPayload = nPayload * ( CR + 4 );
+					nPayload = nPayload + pktparams.Params.LoRa.PreambleLength + 4.25 + 8;
+				}
+				else
+				{
+					nPayload = fmax( ( ( double )( payload + crc -(4 * SF) + 8 + header ) ), 0.0 );
+					nPayload = nPayload / ( double )( 4 * SF );
+					nPayload = ceil( nPayload );
+					nPayload = nPayload * ( CR + 4 );
+					nPayload = nPayload + pktparams.Params.LoRa.PreambleLength + 4.25 + 8;
+				}
+				ts = ( double )( 1 << SF ) / ( double )( bw );
+				tPayload = nPayload * ts;
+#ifdef PRINT_DEBUG
+				printf( "ToA LoRa: %f \n\r", tPayload );
+#endif
+				result = ceil( tPayload );
+			}
+			else if(modparams.PacketType == PACKET_TYPE_FLRC )
+			{
+				uint16_t BitCount = 0;
+				uint16_t BitCountCoded = 0;
+
+				BitCount = 4 + ( pktparams.Params.Flrc.PreambleLength >> 4 ) * 4;              // AGC preamble 
+				BitCount = BitCount + 32;                                                                           // Sync Word
+				BitCount = BitCount + 21;                                                                           // Preamble
+				BitCount = BitCount + ( ( pktparams.Params.Flrc.HeaderType == RADIO_PACKET_VARIABLE_LENGTH ) ? 16 : 0 );
+
+				switch( modparams.Params.Flrc.CodingRate )
+				{
+					case FLRC_CR_3_4:
+						BitCountCoded =  6 + ( pktparams.Params.Flrc.CrcLength >> 4 ) * 8;
+						BitCountCoded = BitCountCoded + pktparams.Params.Flrc.PayloadLength * 8;
+						BitCountCoded = ( uint16_t )( ( ( double )BitCountCoded * 4.0 ) / 3.0 );
+						break;
+
+					case FLRC_CR_1_0:
+						BitCountCoded =  ( pktparams.Params.Flrc.CrcLength >> 4 ) * 8;
+						BitCountCoded = BitCountCoded + pktparams.Params.Flrc.PayloadLength * 8;
+						break;
+
+					default:
+					case FLRC_CR_1_2:
+						BitCountCoded =  6 + ( pktparams.Params.Flrc.CrcLength >> 4 ) * 8;
+						BitCountCoded = BitCountCoded + pktparams.Params.Flrc.PayloadLength * 8;
+						BitCountCoded = BitCountCoded << 1;
+						break;
+				}
+				BitCount = BitCount + BitCountCoded;
+
+				switch( modparams.Params.Flrc.BitrateBandwidth )
+				{
+					case FLRC_BR_1_300_BW_1_2:
+						tPayload = ( double )BitCount / 1300.0;
+						break;
+
+					case FLRC_BR_1_040_BW_1_2:
+						tPayload = ( double )BitCount / 1040.0;
+						break;
+
+					case FLRC_BR_0_650_BW_0_6:
+						tPayload = ( double )BitCount / 650.0;
+						break;
+
+					case FLRC_BR_0_520_BW_0_6:
+						tPayload = ( double )BitCount / 520.0;
+						break;
+
+					case FLRC_BR_0_325_BW_0_3:
+						tPayload = ( double )BitCount / 325.0;
+						break;
+
+					case FLRC_BR_0_260_BW_0_3:
+						tPayload = ( double )BitCount / 260.0;
+						break;
+
+					default:
+						break;
+				}
+
+				printf( "ToA FLRC: %f \n\r", tPayload );
+
+				result = ceil( tPayload );
+			}
+			else if( modparams.PacketType == PACKET_TYPE_GFSK )
+			{
+				uint16_t BitCount = 0;
+
+				BitCount = 4 + ( pktparams.Params.Gfsk.PreambleLength >> 4 ) * 4;              // preamble
+				BitCount = BitCount + 8 + ( pktparams.Params.Gfsk.SyncWordLength >> 1 ) * 8;   // sync word
+				BitCount = BitCount + ( ( pktparams.Params.Gfsk.HeaderType == RADIO_PACKET_VARIABLE_LENGTH ) ? 8 : 0 );
+				BitCount = BitCount + pktparams.Params.Gfsk.PayloadLength * 8;
+				BitCount = BitCount + ( pktparams.Params.Gfsk.CrcLength >> 4 ) * 8;
+
+				switch( modparams.Params.Gfsk.BitrateBandwidth )
+				{
+					case GFSK_BLE_BR_2_000_BW_2_4:
+						tPayload = ( double )BitCount / 2000.0 ;
+						break;
+
+					case GFSK_BLE_BR_1_600_BW_2_4:
+						tPayload = ( double )BitCount / 1600.0 ;
+						break;
+
+					case GFSK_BLE_BR_1_000_BW_2_4:
+					case GFSK_BLE_BR_1_000_BW_1_2:
+						tPayload = ( double )BitCount / 1000.0;
+						break;
+
+					case GFSK_BLE_BR_0_800_BW_2_4:
+					case GFSK_BLE_BR_0_800_BW_1_2:
+						tPayload = ( double )BitCount / 800.0;
+						break;
+
+					case GFSK_BLE_BR_0_500_BW_1_2:
+					case GFSK_BLE_BR_0_500_BW_0_6:
+						tPayload = ( double )BitCount / 500.0;
+						break;
+
+					case GFSK_BLE_BR_0_400_BW_1_2:
+					case GFSK_BLE_BR_0_400_BW_0_6:
+						tPayload = ( double )BitCount / 400.0;
+						break;
+
+					case GFSK_BLE_BR_0_250_BW_0_6:
+					case GFSK_BLE_BR_0_250_BW_0_3:
+						tPayload = ( double )BitCount / 250.0;
+						break;
+
+					case GFSK_BLE_BR_0_125_BW_0_3:
+						tPayload = ( double )BitCount / 125.0;
+						break;
+
+					default:
+						break;
+				}
+#ifdef PRINT_DEBUG
+				printf( "ToA GFSK: %f \n\r", tPayload );
+#endif
+				result = ceil( tPayload );
+			}
+
+			return result;
+		}
 	};
 
 }

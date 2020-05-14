@@ -24,6 +24,7 @@
 
 #include "sx1280_uart.hpp"
 #include "sx1280_spi.hpp"
+#include "sx1280.hpp"
 
 using namespace YukiWorkshop;
 using namespace YukiWorkshop::Drivers::Semtech;
@@ -48,6 +49,7 @@ int main(int argc, char **argv) {
 	cbs.rxTimeout = [&]() {
 		std::cout << "wow rx timeout!\n";
 	};
+
 
 //	Drivers::Semtech::SX1280_UART Radio("/dev/ttyUSB0", g, 19, 6, 13, 26, -1, -1, cbs);
 
@@ -78,7 +80,7 @@ int main(int argc, char **argv) {
 
 	ModulationParams_t ModulationParams;
 	ModulationParams.PacketType = PACKET_TYPE_FLRC;
-	ModulationParams.Params.Flrc.CodingRate = FLRC_CR_3_4;
+	ModulationParams.Params.Flrc.CodingRate = FLRC_CR_1_2;
 	ModulationParams.Params.Flrc.BitrateBandwidth = FLRC_BR_0_325_BW_0_3;
 	ModulationParams.Params.Flrc.ModulationShaping = RADIO_MOD_SHAPING_BT_OFF;
 
@@ -96,7 +98,7 @@ int main(int argc, char **argv) {
 	ModulationParams2.PacketType = PACKET_TYPE_LORA;
 	ModulationParams2.Params.LoRa.CodingRate = LORA_CR_4_5;
 	ModulationParams2.Params.LoRa.Bandwidth = LORA_BW_1600;
-	ModulationParams2.Params.LoRa.SpreadingFactor = LORA_SF5;
+	ModulationParams2.Params.LoRa.SpreadingFactor = LORA_SF8;
 
 	PacketParams_t PacketParams2;
 	PacketParams2.PacketType = PACKET_TYPE_LORA;
@@ -104,7 +106,7 @@ int main(int argc, char **argv) {
 	l.PayloadLength = 253;
 	l.HeaderType = LORA_PACKET_FIXED_LENGTH;
 	l.PreambleLength = 12;
-	l.Crc = LORA_CRC_OFF;
+	l.Crc = LORA_CRC_ON;
 	l.InvertIQ = LORA_IQ_NORMAL;
 
 	ModulationParams_t ModulationParams3;
@@ -115,7 +117,7 @@ int main(int argc, char **argv) {
 
 
 	PacketParams_t PacketParams3;
-	PacketParams2.PacketType = PACKET_TYPE_GFSK;
+	PacketParams3.PacketType = PACKET_TYPE_GFSK;
 	auto &gg = PacketParams3.Params.Gfsk;
 	gg.PreambleLength = PREAMBLE_LENGTH_32_BITS;
 	gg.SyncWordLength = GFSK_SYNCWORD_LENGTH_4_BYTE;
@@ -125,10 +127,10 @@ int main(int argc, char **argv) {
 	gg.CrcLength = RADIO_CRC_2_BYTES;
 	gg.Whitening = RADIO_WHITENING_OFF;
 
-	Radio.SetPacketType(PACKET_TYPE_FLRC);
+	Radio.SetPacketType(PACKET_TYPE_LORA);
 
-	Radio.SetModulationParams( &ModulationParams );
-	Radio.SetPacketParams( &PacketParams );
+	Radio.SetModulationParams( &ModulationParams2 );
+	Radio.SetPacketParams( &PacketParams2 );
 
 	// only used in GFSK, FLRC (4 bytes max) and BLE mode
 	uint8_t sw[] = { 0xDD, 0xA0, 0x96, 0x69, 0xDD };
@@ -173,11 +175,13 @@ int main(int argc, char **argv) {
 //	};
 
 	Radio.rxDone = [&]() {
-		char buf[127];
+		char buf[256];
 		uint8_t sz;
 		std::cout << "wow rx done!\n";
-		Radio.GetPayload(reinterpret_cast<uint8_t *>(buf), &sz, 127);
-		printf("recvd %u bytes\n", sz);
+		PacketStatus_t pstatus;
+		Radio.GetPacketStatus(&pstatus);
+		Radio.GetPayload(reinterpret_cast<uint8_t *>(buf), &sz, 255);
+		printf("recvd %u bytes, RSSI: %d, SNR: %d\n", sz, pstatus.LoRa.RssiPkt, pstatus.LoRa.SnrPkt);
 		write(STDOUT_FILENO, buf, 127);
 		Radio.SetRx((TickTime_t) {RADIO_TICK_SIZE_1000_US, 1000});
 		puts("SetRx done");
@@ -192,14 +196,20 @@ int main(int argc, char **argv) {
 
 	if (argc == 1) {
 		while (1) {
-			char buf[253] = "12345678\n";
-			Radio.SendPayload((uint8_t *) buf, 127, (TickTime_t) {RADIO_TICK_SIZE_1000_US, 1000});
+			char buf[127] = "12345678\n";
+			char buf1[127] = "abcdefgh\n";
+			char buf2[127] = "qwertyui\n";
+
+			Radio.SendPayload((uint8_t *) buf, 253, (TickTime_t) {RADIO_TICK_SIZE_1000_US, 1000});
+//			Radio.SendPayload((uint8_t *) buf1, 127, (TickTime_t) {RADIO_TICK_SIZE_1000_US, 1000});
+//			Radio.SendPayload((uint8_t *) buf2, 127, (TickTime_t) {RADIO_TICK_SIZE_1000_US, 1000});
+
 			puts("SendPayload done");
-			usleep(100 * 1000);
+			usleep(200 * 1000);
 		}
 
 	} else if (argc == 2 ) {
-		Radio.SetRx((TickTime_t) {RADIO_TICK_SIZE_1000_US, 1000});
+		Radio.SetRx((TickTime_t) {RADIO_TICK_SIZE_1000_US, 0xFFFF});
 		puts("SetRx done");
 	} else {
 		Radio.SetTxContinuousWave( );
