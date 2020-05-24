@@ -156,7 +156,8 @@ int main(int argc, char **argv) {
 	auto IrqMask = IRQ_RX_DONE | IRQ_TX_DONE | IRQ_RX_TX_TIMEOUT;
 	Radio.SetDioIrqParams(IrqMask, IrqMask, IRQ_RADIO_NONE, IRQ_RADIO_NONE);
 
-	std::thread irqthread([&](){Radio.RunIrqHandler();});
+	Radio.StartIrqHandler();
+
 	Radio.SetRfFrequency( 2488000000UL );
 //	sleep(2);
 

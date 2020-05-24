@@ -25,6 +25,7 @@
 #pragma once
 
 #include <cassert>
+#include <pthread.h>
 #include "sx1280.hpp"
 
 namespace YukiWorkshop::Drivers::Semtech {
@@ -41,13 +42,14 @@ namespace YukiWorkshop::Drivers::Semtech {
 
 		virtual ~SX1280_SPI() = default;
 
-		void RunIrqHandler() {
-			RadioGpio.run_eventlistener();
+		void SetDebug(bool __enabled) {
+			RadioNss.debug = RadioReset.debug = BUSY.debug = RadioGpio.debug = __enabled;
+			Debug = __enabled;
 		}
 
-		void StopIrqHandler() {
-			RadioGpio.stop_eventlistener();
-		}
+		void StartIrqHandler(int __prio = 50);
+
+		void StopIrqHandler();
 
 		/*!
 		 * \brief Soft resets the radio
@@ -160,6 +162,8 @@ namespace YukiWorkshop::Drivers::Semtech {
 
 		std::mutex IOLock;
 		std::thread IrqThread;
+
+		bool Debug = false;
 
 		/*!
 		 * \brief Sets the callback functions to be run on DIO1..3 interrupt

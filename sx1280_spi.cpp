@@ -28,7 +28,7 @@
  * \brief Used to block execution waiting for low state on radio busy pin.
  *        Essentially used in SPI communications
  */
-#define WaitOnBusy( )          while(BUSY.read()){ usleep(1 * 1000); }
+#define WaitOnBusy( )          while(BUSY.read()){ usleep(10); }
 
 using namespace YukiWorkshop::Drivers::Semtech;
 
@@ -43,10 +43,6 @@ SX1280_SPI::SX1280_SPI(const std::string &__spidev_path, YukiWorkshop::GPIO::Dev
 	RadioReset(__gpio_iface.line(__rst_pin, GPIO::LineMode::Output, 1, "SX1280 NRESET")),
 	SX1280(callbacks) {
 
-	RadioNss.debug = true;
-	RadioReset.debug = true;
-	BUSY.debug = true;
-	RadioGpio.debug = true;
 }
 
 void SX1280_SPI::SetSpiSpeed(uint32_t spiSpeed) {
@@ -87,7 +83,8 @@ void SX1280_SPI::Wakeup() {
 
 	// Don't wait for BUSY here
 
-	printf("Wakeup\n");
+	if (Debug)
+		printf("SX1280: Wakeup\n");
 
 	uint8_t buf[2] = {RADIO_GET_STATUS, 0};
 
@@ -100,14 +97,16 @@ void SX1280_SPI::Wakeup() {
 	// Wait for chip to be ready.
 	WaitOnBusy();
 
-	printf("Wakeup done\n");
+	if (Debug)
+		printf("SX1280: Wakeup done\n");
 }
 
 void SX1280_SPI::WriteCommand(RadioCommands_t command, uint8_t *buffer, uint16_t size )
 {
 	std::lock_guard lg(IOLock);
 
-	printf("WriteCommand: 0x%02x %u\n", command, size);
+	if (Debug)
+		printf("SX1280: WriteCommand: 0x%02x %u\n", command, size);
 
 	WaitOnBusy();
 
@@ -118,14 +117,16 @@ void SX1280_SPI::WriteCommand(RadioCommands_t command, uint8_t *buffer, uint16_t
 
 	RadioNss.write(1);
 
-	printf("WriteCommand: send done\n");
+	if (Debug)
+		printf("SX1280: WriteCommand: send done\n");
 
 
 	if (command != RADIO_SET_SLEEP) {
 		WaitOnBusy();
 	}
 
-	printf("WriteCommand: wait done\n");
+	if (Debug)
+		printf("SX1280: WriteCommand: wait done\n");
 
 }
 
@@ -156,7 +157,8 @@ void SX1280_SPI::ReadCommand(RadioCommands_t command, uint8_t *buffer, uint16_t 
 void SX1280_SPI::WriteRegister(uint16_t address, uint8_t *buffer, uint16_t size ) {
 	std::lock_guard lg(IOLock);
 
-	printf("WriteRegister: 0x%04x %u\n", address, size);
+	if (Debug)
+		printf("SX1280: WriteRegister: 0x%04x %u\n", address, size);
 
 	WaitOnBusy();
 
@@ -170,11 +172,13 @@ void SX1280_SPI::WriteRegister(uint16_t address, uint8_t *buffer, uint16_t size 
 
 	RadioNss.write(1);
 
-	printf("WriteRegister: send done\n");
+	if (Debug)
+		printf("SX1280: WriteRegister: send done\n");
 
 	WaitOnBusy();
 
-	printf("WriteRegister: Wait done\n");
+	if (Debug)
+		printf("SX1280: WriteRegister: Wait done\n");
 }
 
 void SX1280_SPI::WriteRegister(uint16_t address, uint8_t value ) {
@@ -249,6 +253,20 @@ void SX1280_SPI::ReadBuffer(uint8_t offset, uint8_t *buffer, uint8_t size) {
 
 uint8_t SX1280_SPI::GetDioStatus() {
 	return 0;
+}
+
+void SX1280_SPI::StartIrqHandler(int __prio) {
+	IrqThread = std::thread([this, __prio](){
+		sched_param param;
+		param.sched_priority = __prio;
+		pthread_setschedparam(pthread_self(), SCHED_RR, &param);
+		RadioGpio.run_eventlistener();
+	});
+}
+
+void SX1280_SPI::StopIrqHandler() {
+	RadioGpio.stop_eventlistener();
+	IrqThread.join();
 }
 
 
